@@ -1,4 +1,4 @@
-# cifar10_cnn.py
+# cifar10_cnn_no_aug.py
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -36,11 +36,7 @@ def main():
     dropout_rate = cfg['model']['dropout_rate']
     classifier_dropout = cfg['model']['classifier_dropout']
 
-    # 数据增强参数
-    random_crop_padding = cfg['data_augmentation']['random_crop_padding']
-    random_hflip_prob = cfg['data_augmentation']['random_hflip_prob']
-
-    # 标准化参数
+    # 标准化参数 (CIFAR-10 数据集的标准参数)
     normalize_mean = cfg['normalization']['mean']
     normalize_std = cfg['normalization']['std']
 
@@ -56,26 +52,20 @@ def main():
     print(f"Absolute path to data_root: {os.path.abspath(data_root)}")
 
     # ----------------------------
-    # 2. 数据预处理与加载 (使用 torchvision.datasets.CIFAR10)
+    # 2. 数据预处理与加载 (不使用数据增强，仅使用 ToTensor 和 Normalize)
     # ----------------------------
-    transform_train = transforms.Compose([
-        transforms.RandomCrop(32, padding=random_crop_padding),
-        transforms.RandomHorizontalFlip(p=random_hflip_prob),
-        transforms.ToTensor(),
-        transforms.Normalize(normalize_mean, normalize_std)
+    # 定义仅包含 ToTensor 和 Normalize 的变换
+    transform = transforms.Compose([
+        transforms.ToTensor(), # 将 PIL 图像或 numpy 数组转换为张量
+        transforms.Normalize(normalize_mean, normalize_std) # 标准化
     ])
 
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(normalize_mean, normalize_std)
-    ])
-
-    # 使用 torchvision.datasets.CIFAR10 加载 .batch 文件
+    # 使用相同的变换应用于训练集和测试集
     trainset = torchvision.datasets.CIFAR10(
         root=data_root,
         train=True,
         download=download_data,  # 传入 yaml 中的 download 标志
-        transform=transform_train
+        transform=transform      # 使用无增强的变换
     )
 
     trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
@@ -84,7 +74,7 @@ def main():
         root=data_root,
         train=False,
         download=download_data,
-        transform=transform_test
+        transform=transform      # 使用无增强的变换
     )
 
     testloader = DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
@@ -193,7 +183,7 @@ def main():
     train_accuracies = []
     test_accuracies = []
 
-    print("Start training...")
+    print("Start training (without data augmentation)...")
     for epoch in range(epochs):
         train_loss, train_acc = train_one_epoch()
         test_acc = evaluate()
@@ -205,7 +195,7 @@ def main():
         print(f"Epoch [{epoch + 1}/{epochs}] "
               f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%, Test Acc: {test_acc:.2f}%")
 
-    print("Training finished!")
+    print("Training finished (without data augmentation)!")
 
     # ----------------------------
     # 8. 可视化训练过程（可选）
@@ -214,7 +204,7 @@ def main():
 
     plt.subplot(1, 2, 1)
     plt.plot(train_losses, label='Train Loss')
-    plt.title('Loss Curve')
+    plt.title('Loss Curve (No Augmentation)')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.legend()
@@ -222,7 +212,7 @@ def main():
     plt.subplot(1, 2, 2)
     plt.plot(train_accuracies, label='Train Acc')
     plt.plot(test_accuracies, label='Test Acc')
-    plt.title('Accuracy Curve')
+    plt.title('Accuracy Curve (No Augmentation)')
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy (%)')
     plt.legend()
@@ -235,7 +225,7 @@ def main():
     # 9. 保存模型（可选）
     # ----------------------------
     torch.save(model.state_dict(), model_save_path)  # 使用 YAML 中的路径
-    print(f"Model saved as '{model_save_path}'")
+    print(f"Model (without augmentation) saved as '{model_save_path}'")
 
 
 if __name__ == '__main__':
