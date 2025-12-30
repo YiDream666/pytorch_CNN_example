@@ -3,36 +3,32 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 from PIL import Image
-import yaml
 import tkinter as tk
 from tkinter import filedialog
 import os
 
 
-def load_model_and_predict(model_path, config_path, image_paths):
+def load_model_and_predict(model_path, image_paths):
     """
     加载训练好的模型并进行预测。
 
     Args:
         model_path (str): 训练好的模型权重文件路径 (例如 'model.pth')
-        config_path (str): 保存了模型和数据预处理配置的 YAML 文件路径 (例如 'config.yaml')
         image_paths (list or str): 要预测的图像路径列表，或者单个图像路径
     """
-    # 1. 加载配置
-    with open(config_path, 'r', encoding='utf-8') as f:
-        cfg = yaml.safe_load(f)
-
-    device = torch.device(cfg['device'] if torch.cuda.is_available() else "cpu")
+    # --- 直接在脚本中定义配置 ---
+    # 设备
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device for prediction: {device}")
 
-    # 获取模型参数
-    num_classes = cfg['model']['num_classes']
-    dropout_rate = cfg['model']['dropout_rate']
-    classifier_dropout = cfg['model']['classifier_dropout']
+    # 模型参数 (需要与训练时使用的参数完全一致)
+    num_classes = 10  # CIFAR-10 有 10 个类别
+    dropout_rate = 0.25  # 训练时使用的 dropout_rate
+    classifier_dropout = 0.5  # 训练时使用的 classifier_dropout
 
-    # 获取标准化参数
-    normalize_mean = cfg['normalization']['mean']
-    normalize_std = cfg['normalization']['std']
+    # CIFAR-10 数据集的标准化参数 (固定值)
+    normalize_mean = (0.4914, 0.4822, 0.4465)
+    normalize_std = (0.2023, 0.1994, 0.2010)
 
     # 2. 定义模型结构 (必须与训练时完全相同)
     class SimpleCNN(nn.Module):
@@ -66,7 +62,7 @@ def load_model_and_predict(model_path, config_path, image_paths):
             )
             self.classifier = nn.Sequential(
                 nn.Flatten(),
-                nn.Linear(128 * 4 * 4, 512),
+                nn.Linear(128 * 4 * 4, 512), # 128 channels * 4 (32/2/2/2) * 4
                 nn.ReLU(),
                 nn.Dropout(classifier_dropout),
                 nn.Linear(512, num_classes)
@@ -77,7 +73,7 @@ def load_model_and_predict(model_path, config_path, image_paths):
             x = self.classifier(x)
             return x
 
-    # 3. 初始化模型 (在初始化时指定设备，或者稍后移动)
+    # 3. 初始化模型
     model = SimpleCNN(num_classes=num_classes)
 
     # 4. 加载训练好的权重
@@ -160,12 +156,11 @@ def select_image_and_predict():
         return
 
     # --- 请修改以下路径 ---
-    # 请确保这些路径指向你实际保存的模型文件和配置文件
+    # 请确保这个路径指向你实际保存的模型文件
     MODEL_PATH = "v1.pth"  # 你的模型权重文件路径
-    CONFIG_PATH = "config.yaml"  # 你的配置文件路径
 
     print(f"Selected {len(file_paths)} file(s). Starting prediction...")
-    load_model_and_predict(MODEL_PATH, CONFIG_PATH, file_paths)
+    load_model_and_predict(MODEL_PATH, file_paths)
 
 
 if __name__ == "__main__":

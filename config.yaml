@@ -6,15 +6,15 @@ device: "cuda" # 也可以设为 "cpu"
 
 # 训练参数
 training:
-  batch_size: 64
-  epochs: 25
+  batch_size: 128
+  epochs: 30
   learning_rate: 0.001
 
 # 数据集路径 (指向你的 .batch 文件所在目录)
 data:
   root: "cifar-10-batches-py" # 修改为你本地存放 .batch 文件的路径
   num_workers: 2
-  download: true # 因为我们已经有 .batch 文件，不需要下载
+  download: true
 
 # 模型参数
 model:
@@ -34,5 +34,5 @@ normalization:
 
 # 保存与加载
 saving:
-  model_path: "cifar10_cnn.pth"
-  plot_path: "cifar10_training_curve.png"
+  model_path: "output.pth"
+  plot_path: "output.png"
