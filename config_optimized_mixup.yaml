@@ -2,7 +2,7 @@ device: "cuda"
 
 data:
   root: "cifar-10-batches-py"
-  num_workers: 4       # 如果 CPU 核心够多，可以设为 8
+  num_workers: 14       # 根据你的 CPU 核心数调整
   download: true
 
 model:
@@ -10,10 +10,10 @@ model:
   classifier_dropout: 0.0  # 设置为 0 因使用了 Mixup，不需要额外的 Dropout，否则会欠拟合
 
 training:
-  batch_size: 128      # 128 最好
-  epochs: 300          # Mixup 需要更久的时间收敛，建议200以上
-  learning_rate: 0.001 # AdamW 的标准学习率
-  weight_decay: 0.05   # AdamW 需要较大的衰减 (0.05 - 0.1)
+  batch_size: 256       # 128 最好的折中，256 也可以，视显存而定
+  epochs: 300           # Mixup 需要更久的时间收敛，建议200以上
+  learning_rate: 0.0015 # AdamW 的标准学习率为 0.001，若增大batch size 可适当增大学习率
+  weight_decay: 0.05    # AdamW 需要较大的衰减 (0.05 - 0.1)
 
 data_augmentation:
   random_crop_padding: 4
