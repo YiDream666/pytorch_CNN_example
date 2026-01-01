@@ -15,6 +15,8 @@
 使用OptimizedCNN 3x3卷积（自定义残差网络3x3卷积）并
 使用**图像增强手段**：*随机裁剪、随机水平旋转、归一化、随机擦除*
 使用**训练优化技术**：AMP自动混合精度，Channels Last（*针对NVIDIA Tensor*），Label Smoothing标签平滑，AdamW+余弦退火，cuDNN Benchmark自动调优。
+### mixup技术
+在后缀带有mixup的脚本中使用了竞赛级的mixup技术-混合种类训练，和EMA指数移动平均技术-集成过去步数的模型，使后期模型质量更稳定，以及运用了Torch Complie技术-使得训练速度得到提升，此外优化Kaiming Initialization避免学习梯度消失。
 
 ## 本仓库OptimizedCNN结构
 1. 模型架构 (Model Architecture)模型采用了类 ResNet 的轻量化设计，旨在平衡计算开销与特征提取能力：基础骨干: 由多个 ResidualBlock 堆叠而成，每个 Block 包含两个 $3 \times 3$ 卷积及跳跃连接（Skip Connection），有效缓解梯度消失问题。特征演进: 采用三级阶段设计，通道数从 32 提升至 128，并在阶段间通过 stride=2 进行下采样。分类器: * 全局自适应平均池化 (Global Adaptive Avg Pooling): 显著减少全连接层参数量。Dropout 层: 引入随机失活防止过拟合。线性输出: 最终映射至 10 个类别。
@@ -32,10 +34,11 @@
 
 ## Optimized项目结构
 ```php
-├── cifar-10-batches-py/     # cifar-10训练集路径
-├── config_optimized.yaml    # 配置文件（包含超参数、路径、增强设置）
-├── cifar10_cnn_optimized.py # 核心训练脚本
-├── results/                 # 训练产出
-│   ├── best_model.pth       # 验证集表现最好的权重
-│   └── training_plot.png    # 损失与准确率演进图
+├── cifar-10-batches-py/           # cifar-10训练集路径
+├── config_optimized.yaml          # optimized配置文件（包含超参数、路径、增强设置）
+├── config_optimized_mixup.yaml    # mixup配置文件（包含超参数、路径、增强设置）
+├── cifar10_cnn_optimized.py       # optimized核心训练脚本
+├── cifar10_cnn_optimized_mixup.py # mixup技术的核心训练脚本
+├── {best_model}.pth               # 验证集表现最好的权重，可在对应yaml中修改文件名
+└── {training_plot}.png            # 损失与准确率演进图，可在对应yaml中修改文件名
 ```
