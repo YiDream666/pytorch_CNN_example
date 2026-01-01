@@ -18,7 +18,6 @@ from copy import deepcopy
 # ----------------------------
 class ModelEMA:
     def __init__(self, model, decay=0.999):
-        # 确保深拷贝时不带梯度历史
         self.module = deepcopy(model)
         self.module.eval()
         self.decay = decay
@@ -39,13 +38,8 @@ def mixup_data(x, y, alpha=1.0, use_cuda=True):
         lam = np.random.beta(alpha, alpha)
     else:
         lam = 1
-
     batch_size = x.size(0)
-    if use_cuda:
-        index = torch.randperm(batch_size).cuda()
-    else:
-        index = torch.randperm(batch_size)
-
+    index = torch.randperm(batch_size).cuda() if use_cuda else torch.randperm(batch_size)
     mixed_x = lam * x + (1 - lam) * x[index, :]
     y_a, y_b = y, y[index]
     return mixed_x, y_a, y_b, lam
@@ -64,50 +58,41 @@ class ResidualBlock(nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(out_channels)
-        
         self.shortcut = nn.Sequential()
         if stride != 1 or in_channels != out_channels:
             self.shortcut = nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(out_channels)
             )
-
     def forward(self, x):
         out = self.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
         out += self.shortcut(x)
-        out = self.relu(out)
-        return out
+        return self.relu(out)
 
 class OptimizedCNN(nn.Module):
     def __init__(self, num_classes=10, classifier_dropout=0.1):
         super(OptimizedCNN, self).__init__()
-        # 加宽通道以冲击 95%+ 准确率
         self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU(inplace=True)
-
         self.layer1 = self._make_layer(64, 64, 3, stride=1)
         self.layer2 = self._make_layer(64, 128, 3, stride=2) 
         self.layer3 = self._make_layer(128, 256, 3, stride=2)
-
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.dropout = nn.Dropout(classifier_dropout)
         self.fc = nn.Linear(256, num_classes)
-        
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
             elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
-
     def _make_layer(self, in_channels, out_channels, num_blocks, stride):
         layers = [ResidualBlock(in_channels, out_channels, stride)]
         for _ in range(1, num_blocks):
             layers.append(ResidualBlock(out_channels, out_channels, stride=1))
         return nn.Sequential(*layers)
-
     def forward(self, x):
         x = self.relu(self.bn1(self.conv1(x)))
         x = self.layer1(x)
@@ -116,8 +101,7 @@ class OptimizedCNN(nn.Module):
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
         x = self.dropout(x)
-        x = self.fc(x)
-        return x
+        return self.fc(x)
 
 def main():
     # ----------------------------
@@ -126,7 +110,6 @@ def main():
     with open('config_optimized_mixup.yaml', 'r', encoding='utf-8') as f:
         cfg = yaml.safe_load(f)
 
-    # 修正 torch 变量名冲突
     target_device_str = cfg['device'] if torch.cuda.is_available() else "cpu"
     device = torch.device(target_device_str)
     print(f"Using device: {device}")
@@ -134,7 +117,6 @@ def main():
     if device.type == 'cuda':
         torch.backends.cudnn.benchmark = True 
 
-    # 提取参数
     batch_size = int(cfg['training']['batch_size'])
     epochs = int(cfg['training']['epochs'])
     lr = float(cfg['training']['learning_rate'])
@@ -143,7 +125,7 @@ def main():
     plot_save_path = cfg['saving']['plot_path']
 
     # ----------------------------
-    # 2. 数据加载
+    # 2. 数据加载 (优化 DataLoader)
     # ----------------------------
     normalize = transforms.Normalize(cfg['normalization']['mean'], cfg['normalization']['std'])
     
@@ -157,20 +139,35 @@ def main():
     ])
 
     trainset = torchvision.datasets.CIFAR10(root=cfg['data']['root'], train=True, download=True, transform=transform_train)
-    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=cfg['data']['num_workers'], pin_memory=True)
+    
+    # 针对 13600KF 和 Windows 优化的 DataLoader
+    trainloader = DataLoader(
+        trainset, 
+        batch_size=batch_size, 
+        shuffle=True, 
+        num_workers=int(cfg['data']['num_workers']), 
+        pin_memory=True,
+        persistent_workers=True  # <--- 新增：保持子进程常驻，减少 Epoch 切换开销
+    )
 
     testset = torchvision.datasets.CIFAR10(root=cfg['data']['root'], train=False, download=True, 
                                           transform=transforms.Compose([transforms.ToTensor(), normalize]))
-    testloader = DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=cfg['data']['num_workers'], pin_memory=True)
+    
+    testloader = DataLoader(
+        testset, 
+        batch_size=batch_size, 
+        shuffle=False, 
+        num_workers=int(cfg['data']['num_workers']), 
+        pin_memory=True,
+        persistent_workers=True  # 减少测试时的等待
+    )
 
     # ----------------------------
     # 3. 模型与优化器初始化
     # ----------------------------
     model = OptimizedCNN(num_classes=10).to(device)
-    # channels_last 可以在支持的 GPU 上显著提速
     model = model.to(memory_format=torch.channels_last)
 
-    # 已去除 torch.compile 以兼容 Windows/Triton 环境
     print("Standard mode enabled (torch.compile disabled for stability).")
 
     ema_model = ModelEMA(model, decay=0.999)
@@ -192,11 +189,9 @@ def main():
         loop = tqdm(trainloader, desc=f"Epoch {epoch}/{epochs}", leave=False)
         
         for inputs, labels in loop:
-            # 匹配 memory_format
             inputs = inputs.to(device, memory_format=torch.channels_last, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
 
-            # Mixup 数据增强
             inputs, targets_a, targets_b, lam = mixup_data(inputs, labels, use_cuda=(device.type=='cuda'))
 
             optimizer.zero_grad()
@@ -213,7 +208,7 @@ def main():
             ema_model.update(model)
             running_loss += loss.item()
 
-        # 评估 EMA 模型 (EMA 通常比直接测试模型高 0.5%~1% 准确率)
+        # 评估 EMA 模型
         ema_model.module.eval()
         correct, total = 0, 0
         with torch.no_grad():
@@ -234,21 +229,16 @@ def main():
         save_msg = ""
         if acc > best_acc:
             best_acc = acc
-            # 保存效果最好的 EMA 权重
             torch.save(ema_model.module.state_dict(), model_save_path)
             save_msg = f" (Best: {best_acc:.2f}%)"
         
         print(f"Epoch {epoch:03d} | Loss: {train_losses[-1]:.4f} | Test Acc (EMA): {acc:.2f}%{save_msg}")
 
-    # ----------------------------
-    # 5. 绘图与收尾
-    # ----------------------------
     plt.figure(figsize=(10, 4))
     plt.subplot(1, 2, 1); plt.plot(train_losses); plt.title("Loss (Mixup)")
     plt.subplot(1, 2, 2); plt.plot(test_accs); plt.title("Test Accuracy (EMA)")
     plt.savefig(plot_save_path)
     print(f"\nTraining Complete. Best Accuracy: {best_acc:.2f}%")
-    print(f"Model saved to: {model_save_path}")
 
 if __name__ == '__main__':
     main()

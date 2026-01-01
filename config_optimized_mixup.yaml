@@ -2,7 +2,7 @@ device: "cuda"
 
 data:
   root: "cifar-10-batches-py"
-  num_workers: 14       # 根据你的 CPU 核心数调整
+  num_workers: 8       # 根据你的 CPU 核心数调整，windows下家用CPU一般不超过8
   download: true
 
 model:
